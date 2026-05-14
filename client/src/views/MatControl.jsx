@@ -1,0 +1,397 @@
+import React, { useState } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import socket from '../socket';
+
+// Scoring actions with label, description, and points
+const SCORE_BUTTONS = [
+  { label: 'Takedown', sub: 'Sweep / Knee on Belly', points: 2, color: 'blue' },
+  { label: 'Guard Pass', sub: '', points: 3, color: 'indigo' },
+  { label: 'Mount', sub: 'Back Control', points: 4, color: 'violet' },
+];
+
+const COLOR = {
+  blue:   { btn: 'bg-blue-700 hover:bg-blue-600 active:bg-blue-800 border-blue-600',   badge: 'bg-blue-900 text-blue-300' },
+  indigo: { btn: 'bg-indigo-700 hover:bg-indigo-600 active:bg-indigo-800 border-indigo-600', badge: 'bg-indigo-900 text-indigo-300' },
+  violet: { btn: 'bg-violet-700 hover:bg-violet-600 active:bg-violet-800 border-violet-600', badge: 'bg-violet-900 text-violet-300' },
+};
+
+export default function MatControl({ state }) {
+  const { id } = useParams();
+  const navigate = useNavigate();
+  const matId = Number(id);
+  const mat = state?.mats?.[matId];
+
+  const [confirmReset, setConfirmReset] = useState(false);
+  const [confirmWinner, setConfirmWinner] = useState(null); // null | { winner, method }
+  const [editingDuration, setEditingDuration] = useState(false);
+  const [durationInput, setDurationInput] = useState('');
+
+  if (!mat) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-950">
+        <div className="text-center">
+          <p className="text-gray-400 text-xl">Mat {id} not found.</p>
+          <button onClick={() => navigate('/')} className="mt-4 text-blue-400 hover:underline">← Back to Dashboard</button>
+        </div>
+      </div>
+    );
+  }
+
+  const { match } = mat;
+  const finished = !!match.winner;
+
+  function emit(event, data) {
+    socket.emit(event, { matId, ...data });
+  }
+
+  function openDisplay() {
+    window.open(`/mat/${matId}/display`, `mat${matId}_display`, 'width=1280,height=720');
+  }
+
+  function saveDuration() {
+    const mins = parseFloat(durationInput);
+    if (!isNaN(mins) && mins > 0) {
+      emit('setMatchMeta', { field: 'duration', value: Math.round(mins * 60) });
+    }
+    setEditingDuration(false);
+  }
+
+  function doReset() {
+    emit('resetMatch', {});
+    setConfirmReset(false);
+  }
+
+  function doWinner() {
+    emit('declareWinner', confirmWinner);
+    setConfirmWinner(null);
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-950 flex flex-col no-select">
+      {/* Top bar */}
+      <div className="flex items-center justify-between px-4 py-3 bg-gray-900 border-b border-gray-800">
+        <button onClick={() => navigate('/')} className="text-gray-400 hover:text-white text-sm">← Dashboard</button>
+        <div className="text-center">
+          <h1 className="text-lg font-bold text-white">{mat.name}</h1>
+          {(match.division || match.round) && (
+            <p className="text-xs text-gray-400">{[match.division, match.round].filter(Boolean).join(' · ')}</p>
+          )}
+        </div>
+        <button onClick={openDisplay} className="bg-gray-700 hover:bg-gray-600 text-white text-sm px-3 py-1.5 rounded-lg">
+          Open Display ↗
+        </button>
+      </div>
+
+      {/* Division / Round quick edit */}
+      <div className="flex gap-2 px-4 py-2 bg-gray-900 border-b border-gray-800">
+        <input
+          className="flex-1 bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm text-white placeholder-gray-600 outline-none focus:border-blue-500"
+          placeholder="Division (e.g. Adult Blue Belt -70kg)"
+          value={match.division}
+          onChange={(e) => emit('setMatchMeta', { field: 'division', value: e.target.value })}
+        />
+        <input
+          className="w-40 bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm text-white placeholder-gray-600 outline-none focus:border-blue-500"
+          placeholder="Round (e.g. Final)"
+          value={match.round}
+          onChange={(e) => emit('setMatchMeta', { field: 'round', value: e.target.value })}
+        />
+      </div>
+
+      {/* Winner banner */}
+      {finished && (
+        <div className="bg-green-900 border-b border-green-700 px-4 py-3 text-center">
+          <p className="text-green-300 font-bold text-lg">
+            🏆 Winner: {match[match.winner].name}
+            {match.winMethod === 'submission' ? ' by Submission' :
+             match.winMethod === 'dq' ? ' by DQ' :
+             match.winMethod === 'walkover' ? ' by Walkover' : ' by Points'}
+          </p>
+          <button
+            onClick={() => setConfirmReset(true)}
+            className="mt-1 text-green-400 hover:text-white text-sm underline"
+          >
+            Reset for next match
+          </button>
+        </div>
+      )}
+
+      {/* Main scoring area */}
+      <div className="flex flex-1 overflow-hidden">
+        <CompetitorPanel
+          side="competitor1"
+          competitor={match.competitor1}
+          isWinner={match.winner === 'competitor1'}
+          finished={finished}
+          colorClass="border-blue-800"
+          nameColor="text-blue-300"
+          emit={emit}
+        />
+
+        {/* Center divider with timer */}
+        <div className="flex flex-col items-center justify-between py-4 px-3 bg-gray-900 border-l border-r border-gray-800 min-w-[160px]">
+          {/* Timer display */}
+          <div className="flex flex-col items-center">
+            <p className="text-xs text-gray-500 uppercase tracking-widest mb-1">Time</p>
+            <div className={`text-5xl font-mono font-black ${match.running ? 'text-white' : match.timeLeft === 0 ? 'text-red-400' : 'text-gray-300'}`}>
+              {formatTime(match.timeLeft)}
+            </div>
+            {editingDuration ? (
+              <div className="flex items-center gap-1 mt-2">
+                <input
+                  autoFocus
+                  className="w-16 bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm text-white outline-none text-center"
+                  placeholder="min"
+                  value={durationInput}
+                  onChange={(e) => setDurationInput(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') saveDuration(); if (e.key === 'Escape') setEditingDuration(false); }}
+                />
+                <button onClick={saveDuration} className="text-xs bg-blue-700 hover:bg-blue-600 px-2 py-1 rounded">Set</button>
+              </div>
+            ) : (
+              <button
+                onClick={() => { setDurationInput((match.duration / 60).toString()); setEditingDuration(true); }}
+                className="text-xs text-gray-600 hover:text-gray-400 mt-1"
+              >
+                {Math.floor(match.duration / 60)}min
+              </button>
+            )}
+          </div>
+
+          {/* Timer controls */}
+          <div className="flex flex-col gap-2 w-full mt-4">
+            {!finished && (
+              <>
+                {match.running ? (
+                  <button
+                    onClick={() => emit('timerStop', {})}
+                    className="w-full bg-yellow-600 hover:bg-yellow-500 active:bg-yellow-700 text-white py-3 rounded-xl font-bold text-lg"
+                  >
+                    ⏸ Pause
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => emit('timerStart', {})}
+                    disabled={match.timeLeft === 0}
+                    className="w-full bg-green-700 hover:bg-green-600 active:bg-green-800 disabled:opacity-40 text-white py-3 rounded-xl font-bold text-lg"
+                  >
+                    ▶ Start
+                  </button>
+                )}
+                <button
+                  onClick={() => emit('timerReset', {})}
+                  className="w-full bg-gray-700 hover:bg-gray-600 text-white py-2 rounded-xl font-semibold text-sm"
+                >
+                  Reset Timer
+                </button>
+              </>
+            )}
+          </div>
+
+          {/* Undo */}
+          {!finished && match.lastAction && (
+            <button
+              onClick={() => emit('undoLast', {})}
+              className="w-full mt-3 bg-orange-900 hover:bg-orange-800 border border-orange-700 text-orange-300 py-2 rounded-xl text-sm font-semibold"
+            >
+              ↩ Undo
+            </button>
+          )}
+
+          {/* Submission & reset */}
+          {!finished && (
+            <div className="flex flex-col gap-2 w-full mt-3">
+              <p className="text-xs text-gray-500 text-center uppercase tracking-wider">Submission</p>
+              <button
+                onClick={() => setConfirmWinner({ winner: 'competitor1', winMethod: 'submission' })}
+                className="w-full bg-red-900 hover:bg-red-800 border border-red-700 text-red-300 py-2 rounded-xl text-xs font-bold"
+              >
+                Sub → P1
+              </button>
+              <button
+                onClick={() => setConfirmWinner({ winner: 'competitor2', winMethod: 'submission' })}
+                className="w-full bg-red-900 hover:bg-red-800 border border-red-700 text-red-300 py-2 rounded-xl text-xs font-bold"
+              >
+                Sub → P2
+              </button>
+            </div>
+          )}
+
+          {!finished && (
+            <button
+              onClick={() => setConfirmReset(true)}
+              className="w-full mt-3 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-500 hover:text-gray-300 py-2 rounded-xl text-xs"
+            >
+              Reset Match
+            </button>
+          )}
+        </div>
+
+        <CompetitorPanel
+          side="competitor2"
+          competitor={match.competitor2}
+          isWinner={match.winner === 'competitor2'}
+          finished={finished}
+          colorClass="border-red-900"
+          nameColor="text-red-300"
+          emit={emit}
+        />
+      </div>
+
+      {/* Confirm reset dialog */}
+      {confirmReset && (
+        <Modal
+          title="Reset Match?"
+          message="This will clear all scores, timer, and competitor info."
+          onConfirm={doReset}
+          onCancel={() => setConfirmReset(false)}
+          confirmLabel="Yes, Reset"
+          confirmColor="bg-red-700 hover:bg-red-600"
+        />
+      )}
+
+      {/* Confirm winner dialog */}
+      {confirmWinner && (
+        <Modal
+          title="Confirm Submission"
+          message={`Declare ${match[confirmWinner.winner].name} the winner by submission?`}
+          onConfirm={doWinner}
+          onCancel={() => setConfirmWinner(null)}
+          confirmLabel="Confirm"
+          confirmColor="bg-red-700 hover:bg-red-600"
+        />
+      )}
+    </div>
+  );
+}
+
+function CompetitorPanel({ side, competitor, isWinner, finished, colorClass, nameColor, emit }) {
+  const matId = Number(useParams().id);
+
+  function add(type, amount) {
+    const events = { points: 'addPoints', advantages: 'addAdvantage', penalties: 'addPenalty' };
+    socket.emit(events[type], { matId, side, amount });
+  }
+
+  return (
+    <div className={`flex-1 flex flex-col p-4 border-t-4 ${colorClass}`}>
+      {/* Name & team */}
+      <div className="mb-4">
+        <input
+          className="w-full bg-transparent border-b border-gray-700 focus:border-blue-500 outline-none text-xl font-bold text-white pb-1 placeholder-gray-600"
+          placeholder={side === 'competitor1' ? 'Competitor 1 Name' : 'Competitor 2 Name'}
+          value={competitor.name}
+          onChange={(e) => socket.emit('setCompetitor', { matId, side, field: 'name', value: e.target.value })}
+        />
+        <input
+          className="w-full bg-transparent border-b border-gray-800 focus:border-gray-600 outline-none text-sm text-gray-500 mt-1 pb-1 placeholder-gray-700"
+          placeholder="Team / Club"
+          value={competitor.team}
+          onChange={(e) => socket.emit('setCompetitor', { matId, side, field: 'team', value: e.target.value })}
+        />
+      </div>
+
+      {/* Score display */}
+      <div className={`text-center mb-4 ${isWinner ? 'text-green-400' : 'text-white'}`}>
+        <div className="text-8xl font-black leading-none">{competitor.points}</div>
+        <div className="text-sm text-gray-400 mt-1">points</div>
+      </div>
+
+      {/* Scoring buttons */}
+      {!finished && (
+        <div className="flex flex-col gap-3 mb-4">
+          {SCORE_BUTTONS.map((btn) => (
+            <button
+              key={btn.points}
+              onClick={() => add('points', btn.points)}
+              className={`w-full py-4 rounded-2xl border-2 text-white font-bold text-lg transition-all active:scale-95 ${COLOR[btn.color].btn}`}
+            >
+              <span className="block text-base leading-tight">{btn.label}</span>
+              {btn.sub && <span className="block text-xs font-normal opacity-75 leading-tight">{btn.sub}</span>}
+              <span className={`inline-block mt-1 px-2 py-0.5 rounded-full text-xs font-black ${COLOR[btn.color].badge}`}>
+                +{btn.points}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Advantage & Penalty */}
+      {!finished && (
+        <div className="flex gap-3 mt-auto">
+          <CounterButton
+            label="Advantage"
+            value={competitor.advantages}
+            color="text-yellow-400"
+            onAdd={() => add('advantages', 1)}
+            onRemove={() => add('advantages', -1)}
+          />
+          <CounterButton
+            label="Penalty"
+            value={competitor.penalties}
+            color="text-red-400"
+            onAdd={() => add('penalties', 1)}
+            onRemove={() => add('penalties', -1)}
+          />
+        </div>
+      )}
+
+      {/* Show adv/pen when finished */}
+      {finished && (
+        <div className="flex gap-4 justify-center text-sm text-gray-400">
+          <span>Adv: <strong className="text-yellow-400">{competitor.advantages}</strong></span>
+          <span>Pen: <strong className="text-red-400">{competitor.penalties}</strong></span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CounterButton({ label, value, color, onAdd, onRemove }) {
+  return (
+    <div className="flex-1 bg-gray-800 rounded-xl p-3 text-center border border-gray-700">
+      <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">{label}</p>
+      <div className={`text-3xl font-black ${color} mb-2`}>{value}</div>
+      <div className="flex gap-2">
+        <button
+          onClick={onRemove}
+          disabled={value === 0}
+          className="flex-1 bg-gray-700 hover:bg-gray-600 disabled:opacity-30 text-white rounded-lg py-1.5 text-lg font-bold"
+        >
+          −
+        </button>
+        <button
+          onClick={onAdd}
+          className="flex-1 bg-gray-700 hover:bg-gray-600 text-white rounded-lg py-1.5 text-lg font-bold"
+        >
+          +
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function Modal({ title, message, onConfirm, onCancel, confirmLabel, confirmColor }) {
+  return (
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+      <div className="bg-gray-900 border border-gray-700 rounded-2xl p-6 max-w-sm w-full mx-4 shadow-2xl">
+        <h3 className="text-xl font-bold text-white mb-2">{title}</h3>
+        <p className="text-gray-400 mb-6">{message}</p>
+        <div className="flex gap-3">
+          <button onClick={onCancel} className="flex-1 bg-gray-700 hover:bg-gray-600 text-white py-3 rounded-xl font-semibold">
+            Cancel
+          </button>
+          <button onClick={onConfirm} className={`flex-1 ${confirmColor} text-white py-3 rounded-xl font-bold`}>
+            {confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function formatTime(seconds) {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}:${String(s).padStart(2, '0')}`;
+}

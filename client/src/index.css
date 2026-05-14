@@ -1,0 +1,20 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: 'Inter', system-ui, sans-serif;
+  background: #030712;
+  color: white;
+}
+
+/* Prevent text selection on scoring buttons */
+.no-select {
+  user-select: none;
+  -webkit-user-select: none;
+}
