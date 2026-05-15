@@ -1,8 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import socket from '../socket';
 
-// Scoring actions with label, description, and points
 const SCORE_BUTTONS = [
   { label: 'Takedown', sub: 'Sweep / Knee on Belly', points: 2, color: 'blue' },
   { label: 'Guard Pass', sub: '', points: 3, color: 'indigo' },
@@ -15,6 +14,28 @@ const COLOR = {
   violet: { btn: 'bg-violet-700 hover:bg-violet-600 active:bg-violet-800 border-violet-600', badge: 'bg-violet-900 text-violet-300' },
 };
 
+const ACTIONS = [
+  { id: 'timerToggle', label: 'Start / Stop Timer' },
+  { id: 'timerReset',  label: 'Reset Timer' },
+  { id: 'undoLast',    label: 'Undo Last Score' },
+];
+
+const DEFAULT_BINDINGS = {
+  timerToggle: { code: 'Space', label: 'Space' },
+  timerReset:  { code: 'KeyR',  label: 'R' },
+  undoLast:    { code: 'KeyZ',  label: 'Z' },
+};
+
+const STORAGE_KEY = 'invictus_kb_bindings';
+
+function loadBindings() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
+    if (saved) return { ...DEFAULT_BINDINGS, ...saved };
+  } catch {}
+  return { ...DEFAULT_BINDINGS };
+}
+
 export default function MatControl({ state }) {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -22,9 +43,20 @@ export default function MatControl({ state }) {
   const mat = state?.mats?.[matId];
 
   const [confirmReset, setConfirmReset] = useState(false);
-  const [confirmWinner, setConfirmWinner] = useState(null); // null | { winner, method }
+  const [confirmWinner, setConfirmWinner] = useState(null);
   const [editingDuration, setEditingDuration] = useState(false);
   const [durationInput, setDurationInput] = useState('');
+  const [showControls, setShowControls] = useState(false);
+  const [bindings, setBindings] = useState(loadBindings);
+
+  // Ref holds the current handler so we only register the listener once
+  const shortcutHandlerRef = useRef(null);
+
+  useEffect(() => {
+    const handler = (e) => shortcutHandlerRef.current?.(e);
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
 
   if (!mat) {
     return (
@@ -43,6 +75,27 @@ export default function MatControl({ state }) {
   function emit(event, data) {
     socket.emit(event, { matId, ...data });
   }
+
+  // Update the shortcut handler with fresh closures every render
+  shortcutHandlerRef.current = (e) => {
+    if (['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return;
+    if (confirmReset || confirmWinner || showControls || editingDuration) return;
+    if (finished) return;
+
+    const found = Object.entries(bindings).find(([, b]) => b.code === e.code);
+    if (!found) return;
+    e.preventDefault();
+    const [action] = found;
+
+    if (action === 'timerToggle') {
+      if (match.running) emit('timerStop', {});
+      else if (match.timeLeft > 0) emit('timerStart', {});
+    } else if (action === 'timerReset') {
+      emit('timerReset', {});
+    } else if (action === 'undoLast' && match.lastAction) {
+      emit('undoLast', {});
+    }
+  };
 
   function openDisplay() {
     window.open(`/mat/${matId}/display`, `mat${matId}_display`, 'width=1280,height=720');
@@ -77,9 +130,17 @@ export default function MatControl({ state }) {
             <p className="text-xs text-gray-400">{[match.division, match.round].filter(Boolean).join(' · ')}</p>
           )}
         </div>
-        <button onClick={openDisplay} className="bg-gray-700 hover:bg-gray-600 text-white text-sm px-3 py-1.5 rounded-lg">
-          Open Display ↗
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowControls(true)}
+            className="bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white text-sm px-3 py-1.5 rounded-lg border border-gray-700"
+          >
+            ⌨ Controls
+          </button>
+          <button onClick={openDisplay} className="bg-gray-700 hover:bg-gray-600 text-white text-sm px-3 py-1.5 rounded-lg">
+            Open Display ↗
+          </button>
+        </div>
       </div>
 
       {/* Division / Round quick edit */}
@@ -167,7 +228,8 @@ export default function MatControl({ state }) {
                     onClick={() => emit('timerStop', {})}
                     className="w-full bg-yellow-600 hover:bg-yellow-500 active:bg-yellow-700 text-white py-3 rounded-xl font-bold text-lg"
                   >
-                    ⏸ Pause
+                    <span>⏸ Pause</span>
+                    <KeyHint label={bindings.timerToggle.label} />
                   </button>
                 ) : (
                   <button
@@ -175,7 +237,8 @@ export default function MatControl({ state }) {
                     disabled={match.timeLeft === 0}
                     className="w-full bg-green-700 hover:bg-green-600 active:bg-green-800 disabled:opacity-40 text-white py-3 rounded-xl font-bold text-lg"
                   >
-                    ▶ Start
+                    <span>▶ Start</span>
+                    <KeyHint label={bindings.timerToggle.label} />
                   </button>
                 )}
                 <button
@@ -183,6 +246,7 @@ export default function MatControl({ state }) {
                   className="w-full bg-gray-700 hover:bg-gray-600 text-white py-2 rounded-xl font-semibold text-sm"
                 >
                   Reset Timer
+                  <KeyHint label={bindings.timerReset.label} />
                 </button>
               </>
             )}
@@ -195,6 +259,7 @@ export default function MatControl({ state }) {
               className="w-full mt-3 bg-orange-900 hover:bg-orange-800 border border-orange-700 text-orange-300 py-2 rounded-xl text-sm font-semibold"
             >
               ↩ Undo
+              <KeyHint label={bindings.undoLast.label} />
             </button>
           )}
 
@@ -261,6 +326,102 @@ export default function MatControl({ state }) {
           confirmColor="bg-red-700 hover:bg-red-600"
         />
       )}
+
+      {/* Keyboard controls settings */}
+      {showControls && (
+        <ControlsModal
+          bindings={bindings}
+          onSave={(updated) => { setBindings(updated); setShowControls(false); }}
+          onClose={() => setShowControls(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+function KeyHint({ label }) {
+  return (
+    <span className="ml-2 text-xs opacity-50 font-mono font-normal">[{label}]</span>
+  );
+}
+
+function ControlsModal({ bindings, onSave, onClose }) {
+  const [local, setLocal] = useState(() => ({ ...bindings }));
+  const [capturing, setCapturing] = useState(null);
+
+  useEffect(() => {
+    if (!capturing) return;
+    function onKeyDown(e) {
+      e.preventDefault();
+      if (e.code === 'Escape') {
+        setCapturing(null);
+        return;
+      }
+      const label =
+        e.code === 'Space' ? 'Space' :
+        e.key.length === 1 ? e.key.toUpperCase() :
+        e.key;
+      setLocal((prev) => ({ ...prev, [capturing]: { code: e.code, label } }));
+      setCapturing(null);
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [capturing]);
+
+  function save() {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(local));
+    onSave(local);
+  }
+
+  function resetDefaults() {
+    setLocal({ ...DEFAULT_BINDINGS });
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+      <div className="bg-gray-900 border border-gray-700 rounded-2xl p-6 max-w-sm w-full mx-4 shadow-2xl">
+        <h3 className="text-xl font-bold text-white mb-1">Keyboard Controls</h3>
+        <p className="text-gray-500 text-sm mb-5">Click a binding, then press the key you want to assign.</p>
+
+        <div className="flex flex-col gap-4 mb-6">
+          {ACTIONS.map((action) => (
+            <div key={action.id} className="flex items-center justify-between gap-4">
+              <span className="text-gray-300 text-sm">{action.label}</span>
+              <button
+                onClick={() => setCapturing(action.id)}
+                className={`min-w-[90px] px-3 py-1.5 rounded-lg text-sm font-mono font-bold border transition-colors ${
+                  capturing === action.id
+                    ? 'bg-blue-600 border-blue-400 text-white animate-pulse'
+                    : 'bg-gray-800 border-gray-600 text-gray-200 hover:border-blue-500 hover:text-white'
+                }`}
+              >
+                {capturing === action.id ? 'Press key…' : local[action.id]?.label ?? '—'}
+              </button>
+            </div>
+          ))}
+        </div>
+
+        <div className="flex gap-3">
+          <button
+            onClick={resetDefaults}
+            className="flex-1 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-400 hover:text-white py-2.5 rounded-xl text-sm"
+          >
+            Reset Defaults
+          </button>
+          <button
+            onClick={onClose}
+            className="flex-1 bg-gray-700 hover:bg-gray-600 text-white py-2.5 rounded-xl text-sm font-semibold"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={save}
+            className="flex-1 bg-blue-700 hover:bg-blue-600 text-white py-2.5 rounded-xl text-sm font-bold"
+          >
+            Save
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
