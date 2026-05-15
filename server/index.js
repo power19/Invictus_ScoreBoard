@@ -317,6 +317,15 @@ function nextPow2(n) {
   return p;
 }
 
+// Serve built React app when running as a packaged Electron app
+const path = require('path');
+const fs = require('fs');
+const clientDist = path.join(__dirname, '../client/dist');
+if (fs.existsSync(clientDist)) {
+  app.use(express.static(clientDist));
+  app.get('*', (_req, res) => res.sendFile(path.join(clientDist, 'index.html')));
+}
+
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
   console.log(`\n🥋  Invictus Scoreboard server → http://localhost:${PORT}\n`);
