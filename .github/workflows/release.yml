@@ -19,12 +19,14 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Install dependencies
-        run: |
-          npm install
-          npm --prefix client install
+      - name: Install root dependencies
+        run: npm install
+
+      - name: Install client dependencies
+        run: npm --prefix client install
 
       - name: Build and publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: false
         run: npm run electron:publish
