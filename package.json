@@ -44,7 +44,8 @@
     "publish": {
       "provider": "github",
       "owner": "power19",
-      "repo": "Invictus_ScoreBoard"
+      "repo": "Invictus_ScoreBoard",
+      "releaseType": "release"
     }
   }
 }
