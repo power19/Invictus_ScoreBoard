@@ -14,11 +14,19 @@ export default function Dashboard({ state }) {
     setUpdateState('busy');
     setUpdateMsg('');
     try {
-      const res = await fetch('/api/update', { method: 'POST' });
-      const data = await res.json();
-      setUpdateState(data.success ? 'done' : 'error');
-      setUpdateMsg(data.message);
-      if (data.success) setTimeout(() => window.location.reload(), 1500);
+      if (window.electronAPI) {
+        // Running as .exe — use electron-updater via IPC
+        const msg = await window.electronAPI.checkForUpdates();
+        setUpdateState('done');
+        setUpdateMsg(msg);
+      } else {
+        // Running in browser (dev mode) — git pull via server
+        const res = await fetch('/api/update', { method: 'POST' });
+        const data = await res.json();
+        setUpdateState(data.success ? 'done' : 'error');
+        setUpdateMsg(data.message);
+        if (data.success) setTimeout(() => window.location.reload(), 1500);
+      }
     } catch (e) {
       setUpdateState('error');
       setUpdateMsg(e.message);

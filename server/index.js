@@ -13,14 +13,16 @@ app.use(express.json());
 const projectRoot = require('path').join(__dirname, '..');
 
 app.post('/api/update', (_req, res) => {
-  let out = '', err = '';
+  let out = '', errOut = '', done = false;
+  const reply = (obj) => { if (!done) { done = true; res.json(obj); } };
+
   const proc = spawn('git', ['pull'], { cwd: projectRoot, shell: true, windowsHide: true });
   proc.stdout.on('data', (d) => { out += d; });
-  proc.stderr.on('data', (d) => { err += d; });
-  proc.on('error', (e) => res.json({ success: false, message: e.message }));
+  proc.stderr.on('data', (d) => { errOut += d; });
+  proc.on('error', (e) => reply({ success: false, message: e.message }));
   proc.on('close', (code) => {
-    if (code !== 0) return res.json({ success: false, message: err || out || 'git pull failed' });
-    res.json({ success: true, message: out.trim() || 'Already up to date.' });
+    if (code !== 0) reply({ success: false, message: errOut || out || 'git pull failed' });
+    else reply({ success: true, message: out.trim() || 'Already up to date.' });
   });
 });
 
