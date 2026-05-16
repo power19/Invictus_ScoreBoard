@@ -3,10 +3,10 @@
   "version": "1.0.0",
   "main": "electron/main.js",
   "scripts": {
-    "install:all": "npm install && cd server && npm install && cd ../client && npm install",
+    "install:all": "npm install && npm --prefix server install && npm --prefix client install",
     "dev": "concurrently \"cd server && npm run dev\" \"cd client && npm run dev\"",
     "start": "concurrently \"cd server && npm start\" \"cd client && npm run preview\"",
-    "build": "npm --prefix client build",
+    "build": "npm --prefix client run build",
     "electron:dev": "npm run build && electron .",
     "electron:build": "npm run build && electron-builder --win",
     "electron:publish": "npm run build && electron-builder --win --publish always"

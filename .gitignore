@@ -2,4 +2,6 @@ node_modules/
 server/node_modules/
 client/node_modules/
 client/dist/
+dist-electron/
+client/package-lock.json
 .env
