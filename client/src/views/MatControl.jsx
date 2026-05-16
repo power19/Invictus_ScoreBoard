@@ -2,17 +2,17 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import socket from '../socket';
 
-const SCORE_BUTTONS = [
-  { label: 'Takedown', sub: 'Sweep / Knee on Belly', points: 2, color: 'blue' },
-  { label: 'Guard Pass', sub: '', points: 3, color: 'indigo' },
-  { label: 'Mount', sub: 'Back Control', points: 4, color: 'violet' },
-];
+const BTN_COLORS = ['blue', 'indigo', 'violet', 'emerald', 'amber'];
 
 const COLOR = {
-  blue:   { btn: 'bg-blue-700 hover:bg-blue-600 active:bg-blue-800 border-blue-600',   badge: 'bg-blue-900 text-blue-300' },
-  indigo: { btn: 'bg-indigo-700 hover:bg-indigo-600 active:bg-indigo-800 border-indigo-600', badge: 'bg-indigo-900 text-indigo-300' },
-  violet: { btn: 'bg-violet-700 hover:bg-violet-600 active:bg-violet-800 border-violet-600', badge: 'bg-violet-900 text-violet-300' },
+  blue:    { btn: 'bg-blue-700 hover:bg-blue-600 active:bg-blue-800 border-blue-600',    badge: 'bg-blue-900 text-blue-300' },
+  indigo:  { btn: 'bg-indigo-700 hover:bg-indigo-600 active:bg-indigo-800 border-indigo-600',  badge: 'bg-indigo-900 text-indigo-300' },
+  violet:  { btn: 'bg-violet-700 hover:bg-violet-600 active:bg-violet-800 border-violet-600',  badge: 'bg-violet-900 text-violet-300' },
+  emerald: { btn: 'bg-emerald-700 hover:bg-emerald-600 active:bg-emerald-800 border-emerald-600', badge: 'bg-emerald-900 text-emerald-300' },
+  amber:   { btn: 'bg-amber-700 hover:bg-amber-600 active:bg-amber-800 border-amber-600',   badge: 'bg-amber-900 text-amber-300' },
 };
+
+// ── Keyboard shortcuts ─────────────────────────────────────────────────────
 
 const ACTIONS = [
   { id: 'timerToggle', label: 'Start / Stop Timer' },
@@ -26,15 +26,32 @@ const DEFAULT_BINDINGS = {
   undoLast:    { code: 'KeyZ',  label: 'Z' },
 };
 
-const STORAGE_KEY = 'invictus_kb_bindings';
+const KB_STORAGE_KEY    = 'invictus_kb_bindings';
+const SCORE_BTN_STORAGE = 'invictus_score_buttons';
+
+const DEFAULT_SCORE_BUTTONS = [
+  { id: 1, label: 'Takedown',   sub: 'Sweep / Knee on Belly', points: 2 },
+  { id: 2, label: 'Guard Pass', sub: '',                       points: 3 },
+  { id: 3, label: 'Mount',      sub: 'Back Control',           points: 4 },
+];
 
 function loadBindings() {
   try {
-    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
+    const saved = JSON.parse(localStorage.getItem(KB_STORAGE_KEY));
     if (saved) return { ...DEFAULT_BINDINGS, ...saved };
   } catch {}
   return { ...DEFAULT_BINDINGS };
 }
+
+function loadScoreButtons() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(SCORE_BTN_STORAGE));
+    if (Array.isArray(saved)) return saved;
+  } catch {}
+  return DEFAULT_SCORE_BUTTONS;
+}
+
+// ── Main component ─────────────────────────────────────────────────────────
 
 export default function MatControl({ state }) {
   const { id } = useParams();
@@ -47,9 +64,10 @@ export default function MatControl({ state }) {
   const [editingDuration, setEditingDuration] = useState(false);
   const [durationInput, setDurationInput] = useState('');
   const [showControls, setShowControls] = useState(false);
+  const [showScoreSetup, setShowScoreSetup] = useState(false);
   const [bindings, setBindings] = useState(loadBindings);
+  const [scoreButtons, setScoreButtons] = useState(loadScoreButtons);
 
-  // Ref holds the current handler so we only register the listener once
   const shortcutHandlerRef = useRef(null);
 
   useEffect(() => {
@@ -76,10 +94,9 @@ export default function MatControl({ state }) {
     socket.emit(event, { matId, ...data });
   }
 
-  // Update the shortcut handler with fresh closures every render
   shortcutHandlerRef.current = (e) => {
     if (['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return;
-    if (confirmReset || confirmWinner || showControls || editingDuration) return;
+    if (confirmReset || confirmWinner || showControls || showScoreSetup || editingDuration) return;
     if (finished) return;
 
     const found = Object.entries(bindings).find(([, b]) => b.code === e.code);
@@ -125,12 +142,18 @@ export default function MatControl({ state }) {
       <div className="flex items-center justify-between px-4 py-3 bg-gray-900 border-b border-gray-800">
         <button onClick={() => navigate('/')} className="text-gray-400 hover:text-white text-sm">← Dashboard</button>
         <div className="text-center">
-          <h1 className="text-lg font-bold text-white">{mat.name}</h1>
+          <h1 className="text-xl font-bold text-white">{mat.name}</h1>
           {(match.division || match.round) && (
-            <p className="text-xs text-gray-400">{[match.division, match.round].filter(Boolean).join(' · ')}</p>
+            <p className="text-sm text-gray-400">{[match.division, match.round].filter(Boolean).join(' · ')}</p>
           )}
         </div>
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowScoreSetup(true)}
+            className="bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white text-sm px-3 py-1.5 rounded-lg border border-gray-700"
+          >
+            ⚙ Scoring
+          </button>
           <button
             onClick={() => setShowControls(true)}
             className="bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white text-sm px-3 py-1.5 rounded-lg border border-gray-700"
@@ -186,15 +209,16 @@ export default function MatControl({ state }) {
           finished={finished}
           colorClass="border-blue-800"
           nameColor="text-blue-300"
+          scoreButtons={scoreButtons}
           emit={emit}
         />
 
         {/* Center divider with timer */}
-        <div className="flex flex-col items-center justify-between py-4 px-3 bg-gray-900 border-l border-r border-gray-800 min-w-[160px]">
+        <div className="flex flex-col items-center justify-between py-4 px-3 bg-gray-900 border-l border-r border-gray-800 min-w-[180px]">
           {/* Timer display */}
           <div className="flex flex-col items-center">
-            <p className="text-xs text-gray-500 uppercase tracking-widest mb-1">Time</p>
-            <div className={`text-5xl font-mono font-black ${match.running ? 'text-white' : match.timeLeft === 0 ? 'text-red-400' : 'text-gray-300'}`}>
+            <p className="text-sm text-gray-500 uppercase tracking-widest mb-1">Time</p>
+            <div className={`text-6xl font-mono font-black ${match.running ? 'text-white' : match.timeLeft === 0 ? 'text-red-400' : 'text-gray-300'}`}>
               {formatTime(match.timeLeft)}
             </div>
             {editingDuration ? (
@@ -212,7 +236,7 @@ export default function MatControl({ state }) {
             ) : (
               <button
                 onClick={() => { setDurationInput((match.duration / 60).toString()); setEditingDuration(true); }}
-                className="text-xs text-gray-600 hover:text-gray-400 mt-1"
+                className="text-sm text-gray-600 hover:text-gray-400 mt-1"
               >
                 {Math.floor(match.duration / 60)}min
               </button>
@@ -226,7 +250,7 @@ export default function MatControl({ state }) {
                 {match.running ? (
                   <button
                     onClick={() => emit('timerStop', {})}
-                    className="w-full bg-yellow-600 hover:bg-yellow-500 active:bg-yellow-700 text-white py-3 rounded-xl font-bold text-lg"
+                    className="w-full bg-yellow-600 hover:bg-yellow-500 active:bg-yellow-700 text-white py-4 rounded-xl font-bold text-xl"
                   >
                     <span>⏸ Pause</span>
                     <KeyHint label={bindings.timerToggle.label} />
@@ -235,7 +259,7 @@ export default function MatControl({ state }) {
                   <button
                     onClick={() => emit('timerStart', {})}
                     disabled={match.timeLeft === 0}
-                    className="w-full bg-green-700 hover:bg-green-600 active:bg-green-800 disabled:opacity-40 text-white py-3 rounded-xl font-bold text-lg"
+                    className="w-full bg-green-700 hover:bg-green-600 active:bg-green-800 disabled:opacity-40 text-white py-4 rounded-xl font-bold text-xl"
                   >
                     <span>▶ Start</span>
                     <KeyHint label={bindings.timerToggle.label} />
@@ -243,7 +267,7 @@ export default function MatControl({ state }) {
                 )}
                 <button
                   onClick={() => emit('timerReset', {})}
-                  className="w-full bg-gray-700 hover:bg-gray-600 text-white py-2 rounded-xl font-semibold text-sm"
+                  className="w-full bg-gray-700 hover:bg-gray-600 text-white py-2 rounded-xl font-semibold text-base"
                 >
                   Reset Timer
                   <KeyHint label={bindings.timerReset.label} />
@@ -266,16 +290,16 @@ export default function MatControl({ state }) {
           {/* Submission & reset */}
           {!finished && (
             <div className="flex flex-col gap-2 w-full mt-3">
-              <p className="text-xs text-gray-500 text-center uppercase tracking-wider">Submission</p>
+              <p className="text-sm text-gray-500 text-center uppercase tracking-wider">Submission</p>
               <button
                 onClick={() => setConfirmWinner({ winner: 'competitor1', winMethod: 'submission' })}
-                className="w-full bg-red-900 hover:bg-red-800 border border-red-700 text-red-300 py-2 rounded-xl text-xs font-bold"
+                className="w-full bg-red-900 hover:bg-red-800 border border-red-700 text-red-300 py-2 rounded-xl text-sm font-bold"
               >
                 Sub → P1
               </button>
               <button
                 onClick={() => setConfirmWinner({ winner: 'competitor2', winMethod: 'submission' })}
-                className="w-full bg-red-900 hover:bg-red-800 border border-red-700 text-red-300 py-2 rounded-xl text-xs font-bold"
+                className="w-full bg-red-900 hover:bg-red-800 border border-red-700 text-red-300 py-2 rounded-xl text-sm font-bold"
               >
                 Sub → P2
               </button>
@@ -285,7 +309,7 @@ export default function MatControl({ state }) {
           {!finished && (
             <button
               onClick={() => setConfirmReset(true)}
-              className="w-full mt-3 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-500 hover:text-gray-300 py-2 rounded-xl text-xs"
+              className="w-full mt-3 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-500 hover:text-gray-300 py-2 rounded-xl text-sm"
             >
               Reset Match
             </button>
@@ -299,6 +323,7 @@ export default function MatControl({ state }) {
           finished={finished}
           colorClass="border-red-900"
           nameColor="text-red-300"
+          scoreButtons={scoreButtons}
           emit={emit}
         />
       </div>
@@ -335,98 +360,26 @@ export default function MatControl({ state }) {
           onClose={() => setShowControls(false)}
         />
       )}
+
+      {/* Score button settings */}
+      {showScoreSetup && (
+        <ScoreButtonsModal
+          scoreButtons={scoreButtons}
+          onSave={(updated) => { setScoreButtons(updated); setShowScoreSetup(false); }}
+          onClose={() => setShowScoreSetup(false)}
+        />
+      )}
     </div>
   );
 }
+
+// ── Sub-components ─────────────────────────────────────────────────────────
 
 function KeyHint({ label }) {
-  return (
-    <span className="ml-2 text-xs opacity-50 font-mono font-normal">[{label}]</span>
-  );
+  return <span className="ml-2 text-xs opacity-50 font-mono font-normal">[{label}]</span>;
 }
 
-function ControlsModal({ bindings, onSave, onClose }) {
-  const [local, setLocal] = useState(() => ({ ...bindings }));
-  const [capturing, setCapturing] = useState(null);
-
-  useEffect(() => {
-    if (!capturing) return;
-    function onKeyDown(e) {
-      e.preventDefault();
-      if (e.code === 'Escape') {
-        setCapturing(null);
-        return;
-      }
-      const label =
-        e.code === 'Space' ? 'Space' :
-        e.key.length === 1 ? e.key.toUpperCase() :
-        e.key;
-      setLocal((prev) => ({ ...prev, [capturing]: { code: e.code, label } }));
-      setCapturing(null);
-    }
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [capturing]);
-
-  function save() {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(local));
-    onSave(local);
-  }
-
-  function resetDefaults() {
-    setLocal({ ...DEFAULT_BINDINGS });
-  }
-
-  return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
-      <div className="bg-gray-900 border border-gray-700 rounded-2xl p-6 max-w-sm w-full mx-4 shadow-2xl">
-        <h3 className="text-xl font-bold text-white mb-1">Keyboard Controls</h3>
-        <p className="text-gray-500 text-sm mb-5">Click a binding, then press the key you want to assign.</p>
-
-        <div className="flex flex-col gap-4 mb-6">
-          {ACTIONS.map((action) => (
-            <div key={action.id} className="flex items-center justify-between gap-4">
-              <span className="text-gray-300 text-sm">{action.label}</span>
-              <button
-                onClick={() => setCapturing(action.id)}
-                className={`min-w-[90px] px-3 py-1.5 rounded-lg text-sm font-mono font-bold border transition-colors ${
-                  capturing === action.id
-                    ? 'bg-blue-600 border-blue-400 text-white animate-pulse'
-                    : 'bg-gray-800 border-gray-600 text-gray-200 hover:border-blue-500 hover:text-white'
-                }`}
-              >
-                {capturing === action.id ? 'Press key…' : local[action.id]?.label ?? '—'}
-              </button>
-            </div>
-          ))}
-        </div>
-
-        <div className="flex gap-3">
-          <button
-            onClick={resetDefaults}
-            className="flex-1 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-400 hover:text-white py-2.5 rounded-xl text-sm"
-          >
-            Reset Defaults
-          </button>
-          <button
-            onClick={onClose}
-            className="flex-1 bg-gray-700 hover:bg-gray-600 text-white py-2.5 rounded-xl text-sm font-semibold"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={save}
-            className="flex-1 bg-blue-700 hover:bg-blue-600 text-white py-2.5 rounded-xl text-sm font-bold"
-          >
-            Save
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function CompetitorPanel({ side, competitor, isWinner, finished, colorClass, nameColor, emit }) {
+function CompetitorPanel({ side, competitor, isWinner, finished, colorClass, nameColor, scoreButtons, emit }) {
   const matId = Number(useParams().id);
 
   function add(type, amount) {
@@ -439,41 +392,61 @@ function CompetitorPanel({ side, competitor, isWinner, finished, colorClass, nam
       {/* Name & team */}
       <div className="mb-4">
         <input
-          className="w-full bg-transparent border-b border-gray-700 focus:border-blue-500 outline-none text-xl font-bold text-white pb-1 placeholder-gray-600"
-          placeholder={side === 'competitor1' ? 'Competitor 1 Name' : 'Competitor 2 Name'}
+          className="w-full bg-transparent border-b border-gray-700 focus:border-blue-500 outline-none text-2xl font-bold text-white pb-1 placeholder-gray-600"
+          placeholder={side === 'competitor1' ? 'Competitor 1' : 'Competitor 2'}
           value={competitor.name}
           onChange={(e) => socket.emit('setCompetitor', { matId, side, field: 'name', value: e.target.value })}
         />
         <input
-          className="w-full bg-transparent border-b border-gray-800 focus:border-gray-600 outline-none text-sm text-gray-500 mt-1 pb-1 placeholder-gray-700"
+          className="w-full bg-transparent border-b border-gray-800 focus:border-gray-600 outline-none text-base text-gray-500 mt-1 pb-1 placeholder-gray-700"
           placeholder="Team / Club"
           value={competitor.team}
           onChange={(e) => socket.emit('setCompetitor', { matId, side, field: 'team', value: e.target.value })}
         />
       </div>
 
-      {/* Score display */}
+      {/* Points display + +/- buttons */}
       <div className={`text-center mb-4 ${isWinner ? 'text-green-400' : 'text-white'}`}>
         <div className="text-8xl font-black leading-none">{competitor.points}</div>
-        <div className="text-sm text-gray-400 mt-1">points</div>
+        <div className="text-base text-gray-400 mt-1">points</div>
+        {!finished && (
+          <div className="flex gap-3 mt-3 justify-center">
+            <button
+              onClick={() => add('points', -1)}
+              disabled={competitor.points === 0}
+              className="w-16 h-16 bg-gray-700 hover:bg-gray-600 active:bg-gray-800 disabled:opacity-30 text-white rounded-2xl text-3xl font-bold transition-all active:scale-95"
+            >
+              −
+            </button>
+            <button
+              onClick={() => add('points', 1)}
+              className="w-16 h-16 bg-gray-700 hover:bg-gray-600 active:bg-gray-800 text-white rounded-2xl text-3xl font-bold transition-all active:scale-95"
+            >
+              +
+            </button>
+          </div>
+        )}
       </div>
 
-      {/* Scoring buttons */}
-      {!finished && (
+      {/* Configurable score quick-buttons */}
+      {!finished && scoreButtons.length > 0 && (
         <div className="flex flex-col gap-3 mb-4">
-          {SCORE_BUTTONS.map((btn) => (
-            <button
-              key={btn.points}
-              onClick={() => add('points', btn.points)}
-              className={`w-full py-4 rounded-2xl border-2 text-white font-bold text-lg transition-all active:scale-95 ${COLOR[btn.color].btn}`}
-            >
-              <span className="block text-base leading-tight">{btn.label}</span>
-              {btn.sub && <span className="block text-xs font-normal opacity-75 leading-tight">{btn.sub}</span>}
-              <span className={`inline-block mt-1 px-2 py-0.5 rounded-full text-xs font-black ${COLOR[btn.color].badge}`}>
-                +{btn.points}
-              </span>
-            </button>
-          ))}
+          {scoreButtons.map((btn, i) => {
+            const color = BTN_COLORS[i % BTN_COLORS.length];
+            return (
+              <button
+                key={btn.id}
+                onClick={() => add('points', btn.points)}
+                className={`w-full py-4 rounded-2xl border-2 text-white font-bold text-xl transition-all active:scale-95 ${COLOR[color].btn}`}
+              >
+                <span className="block text-lg leading-tight">{btn.label}</span>
+                {btn.sub && <span className="block text-sm font-normal opacity-75 leading-tight">{btn.sub}</span>}
+                <span className={`inline-block mt-1 px-2 py-0.5 rounded-full text-sm font-black ${COLOR[color].badge}`}>
+                  +{btn.points}
+                </span>
+              </button>
+            );
+          })}
         </div>
       )}
 
@@ -499,7 +472,7 @@ function CompetitorPanel({ side, competitor, isWinner, finished, colorClass, nam
 
       {/* Show adv/pen when finished */}
       {finished && (
-        <div className="flex gap-4 justify-center text-sm text-gray-400">
+        <div className="flex gap-4 justify-center text-base text-gray-400">
           <span>Adv: <strong className="text-yellow-400">{competitor.advantages}</strong></span>
           <span>Pen: <strong className="text-red-400">{competitor.penalties}</strong></span>
         </div>
@@ -511,22 +484,183 @@ function CompetitorPanel({ side, competitor, isWinner, finished, colorClass, nam
 function CounterButton({ label, value, color, onAdd, onRemove }) {
   return (
     <div className="flex-1 bg-gray-800 rounded-xl p-3 text-center border border-gray-700">
-      <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">{label}</p>
-      <div className={`text-3xl font-black ${color} mb-2`}>{value}</div>
+      <p className="text-sm text-gray-500 uppercase tracking-wider mb-1">{label}</p>
+      <div className={`text-4xl font-black ${color} mb-2`}>{value}</div>
       <div className="flex gap-2">
         <button
           onClick={onRemove}
           disabled={value === 0}
-          className="flex-1 bg-gray-700 hover:bg-gray-600 disabled:opacity-30 text-white rounded-lg py-1.5 text-lg font-bold"
+          className="flex-1 bg-gray-700 hover:bg-gray-600 disabled:opacity-30 text-white rounded-lg py-2 text-xl font-bold"
         >
           −
         </button>
         <button
           onClick={onAdd}
-          className="flex-1 bg-gray-700 hover:bg-gray-600 text-white rounded-lg py-1.5 text-lg font-bold"
+          className="flex-1 bg-gray-700 hover:bg-gray-600 text-white rounded-lg py-2 text-xl font-bold"
         >
           +
         </button>
+      </div>
+    </div>
+  );
+}
+
+function ScoreButtonsModal({ scoreButtons, onSave, onClose }) {
+  const [local, setLocal] = useState(() => scoreButtons.map((b) => ({ ...b })));
+
+  function update(id, field, value) {
+    setLocal((prev) => prev.map((b) => (b.id === id ? { ...b, [field]: value } : b)));
+  }
+
+  function remove(id) {
+    setLocal((prev) => prev.filter((b) => b.id !== id));
+  }
+
+  function add() {
+    setLocal((prev) => [...prev, { id: Date.now(), label: '', sub: '', points: 1 }]);
+  }
+
+  function save() {
+    const valid = local.filter((b) => b.label.trim() && Number(b.points) > 0);
+    localStorage.setItem(SCORE_BTN_STORAGE, JSON.stringify(valid));
+    onSave(valid);
+  }
+
+  function resetDefaults() {
+    setLocal(DEFAULT_SCORE_BUTTONS.map((b) => ({ ...b })));
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+      <div className="bg-gray-900 border border-gray-700 rounded-2xl p-6 max-w-md w-full mx-4 shadow-2xl">
+        <h3 className="text-xl font-bold text-white mb-1">Score Buttons</h3>
+        <p className="text-gray-500 text-sm mb-4">Preset scoring shortcuts. Leave empty to use only the +/− counters.</p>
+
+        <div className="flex flex-col gap-2 mb-4 max-h-72 overflow-y-auto pr-1">
+          {local.map((btn) => (
+            <div key={btn.id} className="flex items-center gap-2 bg-gray-800 rounded-xl p-3">
+              <input
+                className="flex-1 min-w-0 bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm text-white outline-none focus:border-blue-500 placeholder-gray-500"
+                placeholder="Label"
+                value={btn.label}
+                onChange={(e) => update(btn.id, 'label', e.target.value)}
+              />
+              <input
+                className="w-24 bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm text-gray-400 outline-none focus:border-blue-500 placeholder-gray-600"
+                placeholder="Sub (opt)"
+                value={btn.sub}
+                onChange={(e) => update(btn.id, 'sub', e.target.value)}
+              />
+              <div className="flex items-center gap-1 flex-shrink-0">
+                <span className="text-gray-500 text-sm font-bold">+</span>
+                <input
+                  type="number"
+                  min="1"
+                  className="w-12 bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm text-white outline-none focus:border-blue-500 text-center"
+                  value={btn.points}
+                  onChange={(e) => update(btn.id, 'points', parseInt(e.target.value) || 1)}
+                />
+              </div>
+              <button
+                onClick={() => remove(btn.id)}
+                className="text-gray-600 hover:text-red-400 text-lg font-bold w-6 flex-shrink-0 text-center"
+              >
+                ✕
+              </button>
+            </div>
+          ))}
+          {local.length === 0 && (
+            <p className="text-gray-600 text-sm text-center py-4">No buttons — only +/− counters will show.</p>
+          )}
+        </div>
+
+        <button
+          onClick={add}
+          className="w-full py-2 mb-4 bg-gray-800 hover:bg-gray-700 border border-dashed border-gray-600 text-gray-400 hover:text-white rounded-xl text-sm transition-colors"
+        >
+          + Add Button
+        </button>
+
+        <div className="flex gap-3">
+          <button onClick={resetDefaults} className="flex-1 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-400 hover:text-white py-2.5 rounded-xl text-sm">
+            Reset Defaults
+          </button>
+          <button onClick={onClose} className="flex-1 bg-gray-700 hover:bg-gray-600 text-white py-2.5 rounded-xl text-sm font-semibold">
+            Cancel
+          </button>
+          <button onClick={save} className="flex-1 bg-blue-700 hover:bg-blue-600 text-white py-2.5 rounded-xl text-sm font-bold">
+            Save
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ControlsModal({ bindings, onSave, onClose }) {
+  const [local, setLocal] = useState(() => ({ ...bindings }));
+  const [capturing, setCapturing] = useState(null);
+
+  useEffect(() => {
+    if (!capturing) return;
+    function onKeyDown(e) {
+      e.preventDefault();
+      if (e.code === 'Escape') { setCapturing(null); return; }
+      const label =
+        e.code === 'Space' ? 'Space' :
+        e.key.length === 1 ? e.key.toUpperCase() :
+        e.key;
+      setLocal((prev) => ({ ...prev, [capturing]: { code: e.code, label } }));
+      setCapturing(null);
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [capturing]);
+
+  function save() {
+    localStorage.setItem(KB_STORAGE_KEY, JSON.stringify(local));
+    onSave(local);
+  }
+
+  function resetDefaults() {
+    setLocal({ ...DEFAULT_BINDINGS });
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+      <div className="bg-gray-900 border border-gray-700 rounded-2xl p-6 max-w-sm w-full mx-4 shadow-2xl">
+        <h3 className="text-xl font-bold text-white mb-1">Keyboard Controls</h3>
+        <p className="text-gray-500 text-sm mb-5">Click a binding, then press the new key.</p>
+
+        <div className="flex flex-col gap-4 mb-6">
+          {ACTIONS.map((action) => (
+            <div key={action.id} className="flex items-center justify-between gap-4">
+              <span className="text-gray-300 text-sm">{action.label}</span>
+              <button
+                onClick={() => setCapturing(action.id)}
+                className={`min-w-[90px] px-3 py-1.5 rounded-lg text-sm font-mono font-bold border transition-colors ${
+                  capturing === action.id
+                    ? 'bg-blue-600 border-blue-400 text-white animate-pulse'
+                    : 'bg-gray-800 border-gray-600 text-gray-200 hover:border-blue-500 hover:text-white'
+                }`}
+              >
+                {capturing === action.id ? 'Press key…' : local[action.id]?.label ?? '—'}
+              </button>
+            </div>
+          ))}
+        </div>
+
+        <div className="flex gap-3">
+          <button onClick={resetDefaults} className="flex-1 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-400 hover:text-white py-2.5 rounded-xl text-sm">
+            Reset Defaults
+          </button>
+          <button onClick={onClose} className="flex-1 bg-gray-700 hover:bg-gray-600 text-white py-2.5 rounded-xl text-sm font-semibold">
+            Cancel
+          </button>
+          <button onClick={save} className="flex-1 bg-blue-700 hover:bg-blue-600 text-white py-2.5 rounded-xl text-sm font-bold">
+            Save
+          </button>
+        </div>
       </div>
     </div>
   );
