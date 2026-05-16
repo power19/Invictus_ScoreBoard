@@ -31,9 +31,12 @@ app.on('window-all-closed', () => app.quit());
 ipcMain.handle('check-for-updates', async () => {
   if (!app.isPackaged) return 'Cannot update in development mode.';
   try {
-    await autoUpdater.checkForUpdates();
-    return 'Checking for updates…';
+    const result = await autoUpdater.checkForUpdates();
+    return result ? 'Checking for updates…' : 'Already on the latest version.';
   } catch (e) {
+    if (e.message.includes('No published versions')) {
+      throw new Error('No updates published yet. Run npm run electron:publish to release an update.');
+    }
     throw new Error(e.message);
   }
 });
