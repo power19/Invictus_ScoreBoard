@@ -1,6 +1,6 @@
 {
   "name": "invictus-scoreboard",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "main": "electron/main.js",
   "scripts": {
     "install:all": "npm install && npm --prefix server install && npm --prefix client install",
