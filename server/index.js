@@ -13,6 +13,9 @@ app.use(express.json());
 const projectRoot = require('path').join(__dirname, '..');
 
 app.post('/api/update', (_req, res) => {
+  if (process.versions.electron) {
+    return res.json({ success: false, message: 'Use the built-in updater — this endpoint is for browser/dev mode only.' });
+  }
   let out = '', errOut = '', done = false;
   const reply = (obj) => { if (!done) { done = true; res.json(obj); } };
 
