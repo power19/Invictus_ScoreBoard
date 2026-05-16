@@ -17,7 +17,7 @@ app.whenReady().then(() => {
   // Give Express a moment to bind before loading the URL
   setTimeout(() => {
     createWindow();
-    autoUpdater.checkForUpdatesAndNotify();
+    if (app.isPackaged) autoUpdater.checkForUpdatesAndNotify();
   }, 500);
 });
 

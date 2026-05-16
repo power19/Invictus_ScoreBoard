@@ -7,6 +7,23 @@ export default function Dashboard({ state }) {
   const { tournament, mats } = state;
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState(tournament.name);
+  const [updateState, setUpdateState] = useState('idle'); // idle | busy | done | error
+  const [updateMsg, setUpdateMsg] = useState('');
+
+  async function doUpdate() {
+    setUpdateState('busy');
+    setUpdateMsg('');
+    try {
+      const res = await fetch('/api/update', { method: 'POST' });
+      const data = await res.json();
+      setUpdateState(data.success ? 'done' : 'error');
+      setUpdateMsg(data.message);
+      if (data.success) setTimeout(() => window.location.reload(), 1500);
+    } catch (e) {
+      setUpdateState('error');
+      setUpdateMsg(e.message);
+    }
+  }
 
   function saveName() {
     socket.emit('setTournament', { name: nameInput });
@@ -53,7 +70,7 @@ export default function Dashboard({ state }) {
             <p className="text-gray-500 mt-1">Tournament Dashboard</p>
           </div>
 
-          <div className="flex gap-3">
+          <div className="flex gap-3 items-center">
             <button
               onClick={() => navigate('/bracket/edit')}
               className="bg-yellow-600 hover:bg-yellow-500 text-white px-4 py-2 rounded-lg font-semibold"
@@ -66,7 +83,27 @@ export default function Dashboard({ state }) {
             >
               Open Bracket Display
             </button>
+            <button
+              onClick={doUpdate}
+              disabled={updateState === 'busy'}
+              className={`px-4 py-2 rounded-lg font-semibold text-white transition-colors ${
+                updateState === 'busy'  ? 'bg-gray-600 cursor-wait' :
+                updateState === 'done'  ? 'bg-green-700 hover:bg-green-600' :
+                updateState === 'error' ? 'bg-red-700 hover:bg-red-600' :
+                'bg-gray-700 hover:bg-gray-600'
+              }`}
+            >
+              {updateState === 'busy' ? '⟳ Updating…' :
+               updateState === 'done' ? '✓ Updated' :
+               updateState === 'error' ? '✗ Failed' :
+               '⟳ Update'}
+            </button>
           </div>
+          {updateMsg && (
+            <p className={`text-xs mt-2 font-mono ${updateState === 'error' ? 'text-red-400' : 'text-green-400'}`}>
+              {updateMsg}
+            </p>
+          )}
         </div>
 
         {/* Mat count selector */}

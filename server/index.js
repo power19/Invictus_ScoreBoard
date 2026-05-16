@@ -2,10 +2,22 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
+const { exec } = require('child_process');
 
 const app = express();
 app.use(cors());
 app.use(express.json());
+
+// ── Update endpoint ────────────────────────────────────────────────────────
+
+const projectRoot = require('path').join(__dirname, '..');
+
+app.post('/api/update', (_req, res) => {
+  exec('git pull', { cwd: projectRoot }, (err, stdout, stderr) => {
+    if (err) return res.json({ success: false, message: stderr || err.message });
+    res.json({ success: true, message: stdout.trim() || 'Already up to date.' });
+  });
+});
 
 const server = http.createServer(app);
 const io = new Server(server, {
